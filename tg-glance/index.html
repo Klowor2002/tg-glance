@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TG Glance</title>
+    <style>
+      body { margin: 0; background: #0a0f0a; color: #9fdc9f; font-family: monospace; }
+      #webpreview { display: none; padding: 16px; }
+      #webpreview canvas { border: 1px solid #2c4a2c; image-rendering: pixelated; }
+      #webpreview .hint { color: #5f7f5f; font-size: 12px; margin-top: 8px; }
+    </style>
+  </head>
+  <body>
+    <!-- The glasses UI is rendered by the Even Hub SDK bridge (containers),
+         not by this page. The web preview below is only a fallback for
+         running outside the Even app / simulator. -->
+    <div id="webpreview">
+      <canvas id="glass" width="576" height="288"></canvas>
+      <div class="hint">Web preview fallback — click = tap · double-click = double-tap · ↑/↓ = swipe. In the Even simulator the real SDK containers are used instead.</div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
