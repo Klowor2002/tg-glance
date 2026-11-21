@@ -5,3 +5,4 @@ dist/
 __pycache__/
 outbox.jsonl
 .env
+tg-glance/scripts/shots/
