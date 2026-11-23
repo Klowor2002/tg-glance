@@ -28,6 +28,7 @@ from pydantic import BaseModel
 
 from . import demo
 from .drafting import draft_reply
+from .summarizing import build_snapshot
 from .telegram_engine import TelegramEngine
 
 app = FastAPI(title="TG Glance backend", version="0.1.0")
@@ -46,6 +47,12 @@ _tokens: dict[str, str] = {}  # token -> account label
 _send_times: list[float] = []
 SEND_MIN_INTERVAL = 5.0
 SEND_HOURLY_CAP = 20
+# Live snapshot cache: Telegram is polled at most once per TTL; the LLM
+# summarizer runs inside build_snapshot, so a refresh is slow (seconds).
+# Stale cache is served while a refresh fails — the app must never die
+# because the snapshot pipeline did.
+_LIVE_TTL_SEC = 120.0
+_live_cache: dict = {"at": 0.0, "data": None}
 
 
 @app.on_event("startup")
@@ -69,9 +76,25 @@ def _auth(authorization: str = Header(default="")) -> str:
     return token
 
 
-def _snapshot() -> dict:
-    # Live provider lands here during the build window; the demo provider
-    # already runs the same budget pipeline over raw snapshot data.
+async def _snapshot() -> dict:
+    """Live provider when TELEGRAM_LIVE=1, demo provider otherwise.
+
+    Live failures fall back to the last good snapshot, then to demo data,
+    so a Telegram/LLM outage degrades the digest instead of breaking it.
+    """
+    if engine.live:
+        now = time.time()
+        if _live_cache["data"] is not None and now - _live_cache["at"] < _LIVE_TTL_SEC:
+            return _live_cache["data"]
+        try:
+            raw = await engine.snapshot()
+            data = await asyncio.to_thread(build_snapshot, raw)
+            _live_cache.update({"at": now, "data": data})
+            return data
+        except Exception as exc:  # noqa: BLE001 - degraded, not fatal
+            print(f"[snapshot] live refresh failed ({exc!r}); serving cache/demo", flush=True)
+            if _live_cache["data"] is not None:
+                return _live_cache["data"]
     return demo.load_snapshot()
 
 
@@ -130,13 +153,13 @@ async def pair_confirm(body: ConfirmBody) -> dict:
 
 @app.get("/v1/digest")
 async def digest(_: str = Depends(_auth)) -> dict:
-    snap = _snapshot()
-    return {"generatedAt": "now", "chats": snap["chats"]}
+    snap = await _snapshot()
+    return {"generatedAt": snap.get("fetchedAt", "now"), "chats": snap["chats"]}
 
 
 @app.get("/v1/chat/{chat_id}")
 async def chat(chat_id: str, _: str = Depends(_auth)) -> dict:
-    snap = _snapshot()
+    snap = await _snapshot()
     detail = snap["details"].get(chat_id)
     if not detail:
         raise HTTPException(404, "unknown chat")
@@ -151,7 +174,7 @@ async def reply_send(body: SendBody, _: str = Depends(_auth)) -> dict:
         raise HTTPException(429, "send throttled: too fast")
     if len(recent) >= SEND_HOURLY_CAP:
         raise HTTPException(429, "send throttled: hourly cap")
-    snap = _snapshot()
+    snap = await _snapshot()
     target = None
     for detail in snap["details"].values():
         if detail.get("draft") and detail["draft"]["id"] == body.draft_id:
@@ -173,7 +196,7 @@ async def reply_send(body: SendBody, _: str = Depends(_auth)) -> dict:
 
 @app.post("/v1/reply/redraft")
 async def reply_redraft(body: RedraftBody, _: str = Depends(_auth)) -> dict:
-    snap = _snapshot()
+    snap = await _snapshot()
     detail = snap["details"].get(body.chat_id)
     if not detail:
         raise HTTPException(404, "unknown chat")
