@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
 """End-to-end journey test against the Even Hub simulator automation API.
 
-Drives the full TG Glance flow:
+Drives the full TG Glance flow (Nov 24 read-path hardening):
   boot -> pairing screen -> confirm pairing (demo stand-in for the
-  Telegram message) -> home list -> open chat -> digest -> reply draft
-  -> tap SEND -> sent confirmation.
+  Telegram message) -> home list (mention-inbox top row first)
+  -> down to the Dow chat row -> digest (demo chats are a single
+  chunk each) -> reply draft -> tap SEND -> sent confirmation
+  -> tap back home -> tap the mention row (jumps straight to
+  reply) -> double-tap back to digest -> double-tap back home.
 
-Asserts at each step that the glasses framebuffer changed and that the
-simulator console shows no errors. Screenshots land in scripts/shots/.
+NOTE: never double-tap on home - that is the designed root exit and
+shuts the glasses container down (blank framebuffer afterwards).
+
+Asserts at each step that the glasses framebuffer changed, that the
+final home screen is not blank, and that the simulator console shows
+no errors. Screenshots land in scripts/shots/.
 
 Usage: python3 scripts/e2e_sim.py [backend_log]
 Requires: backend on :8787, vite on :5173, simulator with
@@ -133,14 +140,27 @@ def main() -> None:
     time.sleep(3.5)  # app polls every 2.5s
     print("home list lit pixels:", shot("02-home"))
 
-    def tap(action: str, name: str, wait: float = 1.2) -> None:
+    def tap(action: str, name: str, wait: float = 1.2) -> int:
         call("POST", f"{SIM}/api/input", {"action": action})
         time.sleep(wait)
-        print(f"{name} lit pixels:", shot(name))
+        lit = shot(name)
+        print(f"{name} lit pixels:", lit)
+        return lit
 
-    tap("click", "03-digest")          # open first chat (Dow Protocol)
-    tap("click", "04-reply")           # last chunk -> reply draft
-    tap("click", "05-sent", wait=1.8)   # SEND
+    # Home rows: [0] "2 questions waiting for you" (mention inbox),
+    # [1..] chat rows. Down once to the Dow chat row, then open it.
+    # Demo chats are a single chunk: digest -> click -> reply directly.
+    tap("down", "02b-home-down", wait=0.8)
+    tap("click", "03-digest")          # Dow digest (single chunk)
+    tap("click", "04-reply")           # digest -> reply draft
+    tap("click", "05-sent", wait=1.8)  # SEND
+    tap("click", "06-home-back")       # sent -> home
+    tap("click", "07-reply-mention")   # mention row jumps straight to reply
+    tap("double_click", "08-digest-back")  # reply double-tap -> digest
+    final_lit = tap("double_click", "09-home-final")  # digest double-tap -> home
+
+    assert final_lit > 100, f"final home screen is blank ({final_lit} lit px)"
+    print(f"final home screen lit pixels: {final_lit}")
 
     text, _ = console_since(0)
     errors = [ln for ln in text.splitlines() if "error" in ln.lower() or "uncaught" in ln.lower()]

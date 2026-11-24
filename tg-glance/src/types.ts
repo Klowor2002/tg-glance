@@ -13,7 +13,8 @@ export interface ChatSummary {
 }
 
 export interface DigestResponse {
-  generatedAt: string
+  /** Backend `fetchedAt`: epoch seconds when live, "now" for demo data. */
+  generatedAt: string | number
   chats: ChatSummary[]
 }
 

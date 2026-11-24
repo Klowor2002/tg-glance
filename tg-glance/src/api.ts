@@ -11,6 +11,23 @@ const BASE: string =
 
 export let demoMode = false
 
+/** HTTP error that keeps its status, so callers can tell "unpaired" (401)
+ * apart from "backend unreachable" (network error -> demo fallback). */
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
+/** Reset the demo fallback so the next fetch retries the live backend. */
+export function retryLive(): void {
+  demoMode = false
+}
+
 async function req<T>(path: string, init?: RequestInit, token?: string): Promise<T> {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 4000)
@@ -24,7 +41,7 @@ async function req<T>(path: string, init?: RequestInit, token?: string): Promise
         ...(init?.headers ?? {}),
       },
     })
-    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`)
     return (await res.json()) as T
   } finally {
     clearTimeout(timer)
@@ -59,7 +76,10 @@ export async function fetchDigest(token: string): Promise<DigestResponse> {
   if (demoMode) return DEMO_DIGEST
   try {
     return await req<DigestResponse>('/v1/digest', undefined, token)
-  } catch {
+  } catch (e) {
+    // 401 means the pairing is dead - the app must re-pair, not silently
+    // fall back to demo data and pretend the user is still connected.
+    if (e instanceof ApiError && e.status === 401) throw e
     demoMode = true
     return DEMO_DIGEST
   }
@@ -69,7 +89,8 @@ export async function fetchChat(token: string, id: string): Promise<ChatDetail> 
   if (demoMode) return DEMO_CHATS[id] ?? DEMO_CHATS.dow
   try {
     return await req<ChatDetail>(`/v1/chat/${encodeURIComponent(id)}`, undefined, token)
-  } catch {
+  } catch (e) {
+    if (e instanceof ApiError && (e.status === 401 || e.status === 404)) throw e
     demoMode = true
     return DEMO_CHATS[id] ?? DEMO_CHATS.dow
   }

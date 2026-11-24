@@ -27,6 +27,18 @@ type Route =
   | { name: 'reply'; chatId: string }
   | { name: 'sent'; chatId: string; ok: boolean }
 
+// Home list rows. The first rows are status/action rows; chat rows follow.
+// Keeping rows separate from `chats` makes tap dispatch unambiguous:
+// index 0 is the mention inbox when it exists, never a chat.
+type HomeRow =
+  | { kind: 'offline' } // backend down - showing demo data, tap retries live
+  | { kind: 'stale' } // snapshot older than STALE_AFTER_SEC, tap refreshes
+  | { kind: 'mention'; chatId: string } // "N questions waiting for you"
+  | { kind: 'chat'; chatId: string }
+
+const STALE_AFTER_SEC = 600 // backend live-cache TTL is 120 s; 10 min is stale
+const HOME_REFRESH_MS = 120_000 // re-fetch the digest while sitting on home
+
 const TOKEN_KEY = 'tgglance.token'
 
 class App {
@@ -35,10 +47,33 @@ class App {
   private pairSession: string | null = null
   private pairCode = ''
   private pairPoll: ReturnType<typeof setInterval> | null = null
+  private pairStartedAt = 0
+  private pairExpiresSec = 600
   private chats: ChatSummary[] = []
+  private rows: HomeRow[] = []
+  private homeEmpty = false
+  private homeTimer: ReturnType<typeof setInterval> | null = null
   private detail: ChatDetail | null = null
   private draftText = ''
   private selectedIndex = 0
+
+  private clearHomeTimer(): void {
+    if (this.homeTimer) {
+      clearInterval(this.homeTimer)
+      this.homeTimer = null
+    }
+  }
+
+  /** Stop all timers. Called on exit: after shutDownPageContainer the
+   * glasses go blank, but this page's JS keeps running - a live home
+   * timer would otherwise keep re-fetching the digest forever. */
+  shutdown(): void {
+    if (this.pairPoll) {
+      clearInterval(this.pairPoll)
+      this.pairPoll = null
+    }
+    this.clearHomeTimer()
+  }
 
   constructor(
     private render: (s: Screen) => Promise<void>,
@@ -57,15 +92,34 @@ class App {
   }
 
   // ------------------------------------------------------------- pairing
-  private async goPairing(): Promise<void> {
+  private async goPairing(notice?: string): Promise<void> {
     this.route = { name: 'pairing' }
-    const start = await api.pairStart()
+    this.clearHomeTimer()
+    let start: Awaited<ReturnType<typeof api.pairStart>>
+    try {
+      start = await api.pairStart()
+    } catch {
+      // Backend unreachable and even the demo stand-in failed: say so
+      // instead of hanging on a blank pairing screen.
+      await this.render({
+        kind: 'text',
+        body:
+          `TG Glance - pairing unavailable\n\n` +
+          `The backend is not reachable.\n` +
+          `Check the connection, then\n` +
+          `reopen the app to retry.\n\n(double-tap to exit)`,
+      })
+      return
+    }
     this.pairSession = start.session
     this.pairCode = start.code
+    this.pairExpiresSec = start.expiresInSec
+    this.pairStartedAt = Date.now()
     await this.render({
       kind: 'text',
       body:
         `TG Glance - pair this device\n\n` +
+        (notice ? `${notice}\n\n` : '') +
         `Open Telegram and send this\ncode to @Kingklwr:\n\n` +
         `      ${start.code}\n\n` +
         `Waiting for pairing...\n(double-tap to exit)`,
@@ -73,6 +127,13 @@ class App {
     if (this.pairPoll) clearInterval(this.pairPoll)
     this.pairPoll = setInterval(async () => {
       if (this.route.name !== 'pairing' || !this.pairSession) return
+      // Code expired before the user sent it: issue a fresh one instead
+      // of polling a dead session forever.
+      if (Date.now() - this.pairStartedAt > this.pairExpiresSec * 1000) {
+        if (this.pairPoll) clearInterval(this.pairPoll)
+        await this.goPairing('That code expired - here is a new one:')
+        return
+      }
       const st = await api.pairStatus(this.pairSession)
       if (st.paired) {
         if (this.pairPoll) clearInterval(this.pairPoll)
@@ -87,23 +148,109 @@ class App {
   private async goHome(): Promise<void> {
     this.route = { name: 'home' }
     this.selectedIndex = 0
-    const digest = await api.fetchDigest(this.token ?? '')
+    this.clearHomeTimer()
+    let digest: Awaited<ReturnType<typeof api.fetchDigest>>
+    try {
+      digest = await api.fetchDigest(this.token ?? '')
+    } catch (e) {
+      // Unpaired: the stored token is dead. Drop it and re-pair openly
+      // instead of showing demo data as if the user were connected.
+      if (e instanceof api.ApiError && e.status === 401) return this.onUnauthorized()
+      throw e
+    }
     this.chats = digest.chats
-    if (this.chats.length === 0) {
+    this.rows = this.buildRows(digest)
+    this.homeEmpty = this.chats.length === 0
+    if (this.homeEmpty) {
       await this.render({
         kind: 'text',
-        body: 'TG Glance\n\nAll quiet - no unread chats\nin your watched communities.\n\n(double-tap to exit)',
+        body:
+          'TG Glance\n\nAll quiet - no unread chats\nin your watched communities.\n\n(tap: refresh - double-tap: exit)',
       })
-      return
+    } else {
+      await this.render({ kind: 'list', items: this.rows.map((r) => this.rowLabel(r)) })
     }
-    await this.render({ kind: 'list', items: this.chats.map((c) => c.label) })
+    // Refresh cadence: while the user sits on home, re-fetch on the
+    // backend's snapshot rhythm so the list never goes quietly stale.
+    this.homeTimer = setInterval(() => {
+      if (this.route.name === 'home') void this.goHome()
+    }, HOME_REFRESH_MS)
+  }
+
+  /** Status rows first, then chat rows. Order is the UX contract:
+   * mention inbox on top, offline/stale notices above the chats. */
+  private buildRows(digest: { generatedAt: string | number; chats: ChatSummary[] }): HomeRow[] {
+    const rows: HomeRow[] = []
+    if (api.demoMode) rows.push({ kind: 'offline' })
+    const gen = digest.generatedAt
+    if (typeof gen === 'number' && Date.now() / 1000 - gen > STALE_AFTER_SEC) {
+      rows.push({ kind: 'stale' })
+    }
+    const totalMentions = digest.chats.reduce((n, c) => n + c.mentions, 0)
+    if (totalMentions > 0) {
+      const first = digest.chats.find((c) => c.mentions > 0)
+      if (first) rows.push({ kind: 'mention', chatId: first.id })
+    }
+    for (const c of digest.chats) rows.push({ kind: 'chat', chatId: c.id })
+    return rows
+  }
+
+  private rowLabel(row: HomeRow): string {
+    switch (row.kind) {
+      case 'offline':
+        return 'Offline - demo data (tap to retry)'
+      case 'stale': {
+        return 'Digest is stale - tap to refresh'
+      }
+      case 'mention': {
+        const total = this.chats.reduce((n, c) => n + c.mentions, 0)
+        return total === 1 ? '1 question waiting for you' : `${total} questions waiting for you`
+      }
+      case 'chat': {
+        const c = this.chats.find((x) => x.id === row.chatId)
+        return c ? c.label : row.chatId
+      }
+    }
+  }
+
+  /** A 401 anywhere past pairing means the token died mid-session. */
+  private async onUnauthorized(): Promise<void> {
+    this.token = null
+    await this.storage.set(TOKEN_KEY, '')
+    await this.goPairing('Session expired - pair again:')
+  }
+
+  private async openMentionRow(chatId: string): Promise<void> {
+    // Mention-first: jump straight to the reply screen for the chat that
+    // asked the user something, skipping the digest. If the draft is not
+    // there (yet), fall back to the digest.
+    try {
+      this.detail = await api.fetchChat(this.token ?? '', chatId)
+    } catch (e) {
+      if (e instanceof api.ApiError && e.status === 401) return this.onUnauthorized()
+      throw e
+    }
+    if (this.detail?.draft) {
+      await this.goReply(chatId)
+    } else {
+      await this.goDigest(chatId, 0)
+    }
   }
 
   // -------------------------------------------------------------- digest
-  private async goDigest(chatId: string, page: number): Promise<void> {
+  private async goDigest(chatId: string, page: number, refresh = false): Promise<void> {
     this.route = { name: 'digest', chatId, page }
-    if (!this.detail || this.detail.id !== chatId) {
-      this.detail = await api.fetchChat(this.token ?? '', chatId)
+    this.clearHomeTimer()
+    // On-open refresh: always re-fetch the detail when arriving from home
+    // or the mention row, so the draft on the reply screen is never
+    // stale. Page turns within a digest reuse the loaded detail.
+    if (refresh || !this.detail || this.detail.id !== chatId) {
+      try {
+        this.detail = await api.fetchChat(this.token ?? '', chatId)
+      } catch (e) {
+        if (e instanceof api.ApiError && e.status === 401) return this.onUnauthorized()
+        throw e
+      }
     }
     const d = this.detail
     const total = d.chunks.length
@@ -172,10 +319,25 @@ class App {
         if (a.type === 'double') return this.exit()
         if (a.type === 'up') this.selectedIndex = Math.max(0, this.selectedIndex - 1)
         if (a.type === 'down')
-          this.selectedIndex = Math.min(this.chats.length - 1, this.selectedIndex + 1)
+          this.selectedIndex = Math.min(this.rows.length - 1, this.selectedIndex + 1)
         if (a.type === 'click') {
-          const chat = this.chats[this.selectedIndex]
-          if (chat) await this.goDigest(chat.id, 0)
+          // Empty digest: a tap refreshes instead of doing nothing.
+          if (this.homeEmpty) return this.goHome()
+          const row = this.rows[this.selectedIndex]
+          if (!row) return
+          switch (row.kind) {
+            case 'offline':
+              // Backend may be back: retry live, fall back to demo again
+              // if it is still down (fetchDigest handles that).
+              api.retryLive()
+              return this.goHome()
+            case 'stale':
+              return this.goHome()
+            case 'mention':
+              return this.openMentionRow(row.chatId)
+            case 'chat':
+              return this.goDigest(row.chatId, 0, true)
+          }
         }
         return
       }
@@ -225,8 +387,17 @@ function eventTypeOf(envelope?: { eventType?: OsEventTypeList }): OsEventTypeLis
 
 async function bootWithBridge(bridge: EvenAppBridge): Promise<void> {
   const renderer = new BridgeRenderer(bridge)
+  // The firmware's list highlight: rebuildPageContainer resets it to the
+  // first item, but the last listEvent's index lingers in this variable.
+  // Reset it on every list render, or the next tap opens the row the
+  // highlight USED to be on (proven Nov 24: the mention-row tap opened
+  // Dow instead, because the index was stale at 1 from an earlier down).
+  let listIndex = 0
   const app = new App(
-    (s) => renderer.show(s),
+    async (s) => {
+      await renderer.show(s)
+      if (s.kind === 'list') listIndex = 0
+    },
     (b) => renderer.upgradeText(b),
     {
       get: (k) => bridge.getLocalStorage(k),
@@ -235,11 +406,11 @@ async function bootWithBridge(bridge: EvenAppBridge): Promise<void> {
       },
     },
     () => {
+      app.shutdown()
       void bridge.shutDownPageContainer(1)
     },
   )
 
-  let listIndex = 0
   bridge.onEvenHubEvent((event: EvenHubEvent) => {
     const sys = eventTypeOf(event.sysEvent)
     const txt = eventTypeOf(event.textEvent)
@@ -295,7 +466,10 @@ function bootWebPreview(): void {
       get: async (k) => localStorage.getItem(k) ?? '',
       set: async (k, v) => localStorage.setItem(k, v),
     },
-    () => console.log('exit requested (web preview)'),
+    () => {
+      app.shutdown()
+      console.log('exit requested (web preview)')
+    },
   )
   let lastClick = 0
   canvas.addEventListener('click', () => {
