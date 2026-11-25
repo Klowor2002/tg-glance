@@ -4,3 +4,4 @@ telethon>=1.36
 pydantic>=2.6
 pysocks
 requests
+httpx>=0.28  # test tooling only (TestClient for scripts/test_live_send.py)

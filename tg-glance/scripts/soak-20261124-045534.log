@@ -1,0 +1,163 @@
+soak start 2026-11-24T04:55:34+00:00 runs=10 log=scripts/soak-20261124-045534.log
+xvfb pid 23537
+ping: b'pong'
+app booted; pairing screen lit pixels: 2688
+pairing code: 639 277
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 1 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2679
+pairing code: 132 198
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 2 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2678
+pairing code: 207 218
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 3 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2708
+pairing code: 627 659
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 4 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2690
+pairing code: 537 708
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 5 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2696
+pairing code: 152 638
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 6 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2674
+pairing code: 877 103
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 7 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2718
+pairing code: 465 887
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 8 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2705
+pairing code: 807 349
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 9 PASS
+ping: b'pong'
+app booted; pairing screen lit pixels: 2692
+pairing code: 514 794
+confirm: b'{"ok":true}'
+home list lit pixels: 3800
+02b-home-down lit pixels: 3800
+03-digest lit pixels: 6163
+04-reply lit pixels: 3662
+05-sent lit pixels: 1247
+06-home-back lit pixels: 3800
+07-reply-mention lit pixels: 3662
+08-digest-back lit pixels: 6163
+09-home-final lit pixels: 3800
+final home screen lit pixels: 3800
+E2E OK - full journey completed, no console errors
+run 10 PASS
+soak done 2026-11-24T04:58:55+00:00: PASS=10 FAIL=0

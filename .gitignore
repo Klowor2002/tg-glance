@@ -5,4 +5,5 @@ dist/
 __pycache__/
 outbox.jsonl
 .env
+.demo-bot-token
 tg-glance/scripts/shots/
